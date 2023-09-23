@@ -1,0 +1,141 @@
+#!/bin/sh
+
+PLAYLIST_URL=$1
+TARGET_DIR=$2
+
+EXIT_CODE=0
+
+ITEM_COUNT=0
+CURRENT_VIDEO_NAME=''
+DOWNLOAD_COUNTER=1
+EXTRACT_AUDIO_COUNTER=1
+RUNNNING_FFMPEG_THREADS=1
+THREADS=2
+
+checkExitCode()
+{
+    if [ $EXIT_CODE != 0 ]; then
+        exit 1
+    fi
+}
+
+echoOnVerbose()
+{
+    if [ "$VERBOSE" = 1 ]; then
+        echo "$@"
+    fi
+}
+
+checkForExecutable()
+{
+    local executable_location=$(which "$1" 2>/dev/null)
+    echoOnVerbose -n ">>> Checking for '$1'... "
+    if ! [ -x "$executable_location" ]; then
+        echoOnVerbose "FAIL"
+        >&2 echo "Error: '$1' not found in PATH." 
+        EXIT_CODE=1
+        return
+    fi
+    echoOnVerbose "OK"
+}
+
+download()
+{   
+    yt-dlp -q "https://youtube.com/watch?v=$1" -f 'worst[ext=mp4]' -o "$1-%(title)s.mp4" --embed-thumbnail --embed-metadata 2>/dev/null 
+}
+
+extractAudio()
+{
+    ffmpeg -loglevel quiet -i "$1" -acodec libmp3lame "$2"
+    rm "$1"
+}
+
+# Check for necessary executables
+checkForExecutable stat
+checkForExecutable ping
+checkForExecutable sed
+checkForExecutable grep
+checkForExecutable pidof
+checkForExecutable curl
+checkForExecutable awk
+checkForExecutable yt-dlp
+checkForExecutable ffmpeg
+checkForExecutable urlencode
+
+checkExitCode
+echoOnVerbose
+
+# Check internet connection
+echoOnVerbose -n ">>> Checking for proper internet connection... "
+
+if ! [ "$(ping -c1 -w3 youtube.com 2>&1 | grep '1 received')" ]; then
+    echoOnVerbose "FAIL"
+    >&2 echo "Error: No internet connection."
+    EXIT_CODE=1
+fi
+echoOnVerbose "OK"
+
+# Check target directory 
+echoOnVerbose -n "\n>>> Checking target directory... "
+if [ "$(stat "$TARGET_DIR" 2>&1 1>/dev/null)" ]; then
+    echoOnVerbose "FAIL"
+    >&2 echo "Error: Could not stat '$TARGET_DIR'"
+    EXIT_CODE=1
+elif [ "$(touch "$TARGET_DIR/.perm-test" 2>&1)" ]; then
+    echoOnVerbose "FAIL"
+    >&2 echo "Error: No write permission in '$TARGET_DIR'."
+    EXIT_CODE=1
+elif [ "$(stat "$TARGET_DIR" | grep file)" ]; then
+    echoOnVerbose "FAIL"
+    >&2 echo "Error: '$TARGET_DIR' is a file."
+    EXIT_CODE=1
+else
+    rm -f "$TARGET_DIR/.perm-test"
+    echoOnVerbose $(realpath "$TARGET_DIR")
+    cd $TARGET_DIR
+fi
+
+checkExitCode
+
+# Check if given playlist exists
+if ! [ $(echo "$PLAYLIST_URL" | grep -E '^https://(|(www|m)\.)youtube\.(com|..)/playlist\?list=') ]; then
+    >&2 echo "Error: The given URL is invalid."
+    EXIT_CODE=1
+elif ! [ "$(curl -D /dev/stdout "https://www.youtube.com/oembed?url=$(echo "$PLAYLIST_URL" | urlencode)&format=json" -o /dev/null --no-progress-meter | sed '1!d' | grep 200)" ]; then
+    >&2 echo "Error: The given playlist is unavailable."
+    EXIT_CODE=1
+fi
+
+# Check for any other running ffmpeg threads
+if [ "$(pidof ffmpeg)" ]; then
+    >&2 echo "Error: Other ffmpeg threads detected."
+    EXIT_CODE=1
+fi
+checkExitCode
+
+# Fetch video URLs
+echoOnVerbose -n ">>> Fetching video URLs... "
+yt-dlp --get-id --flat-playlist "$PLAYLIST_URL" 2>/dev/null > .vid_ids.txt
+ITEM_COUNT=$(cat .vid_ids.txt | wc -l)
+echoOnVerbose "$ITEM_COUNT items to download\n"
+
+
+while [ "$DOWNLOAD_COUNTER" -le "$ITEM_COUNT" ]; do
+    echo "Downloading item $DOWNLOAD_COUNTER of $ITEM_COUNT"
+    download "$(cat .vid_ids.txt | sed "$DOWNLOAD_COUNTER!d")" 
+    DOWNLOAD_COUNTER=$(($DOWNLOAD_COUNTER + 1))
+    while [ "$EXTRACT_AUDIO_COUNTER" -lt "$DOWNLOAD_COUNTER" ] && [ "$RUNNNING_FFMPEG_THREADS" -le "$THREADS" ]; do
+        ID_REFERENCE="$(cat .vid_ids.txt | sed "$EXTRACT_AUDIO_COUNTER!d")"
+        VIDEO_NAME=$(ls *.mp4 | grep $ID_REFERENCE)
+
+        echo "Extracting audio from item $EXTRACT_AUDIO_COUNTER of $ITEM_COUNT"
+        extractAudio "$VIDEO_NAME" "$(echo $VIDEO_NAME | cut -c "$(($(echo $ID_REFERENCE | wc -c) +1))-" | sed -e "s/\.mp4/\.mp3/g")" &
+
+        EXTRACT_AUDIO_COUNTER=$(($EXTRACT_AUDIO_COUNTER + 1))
+        RUNNNING_FFMPEG_THREADS=$(pidof ffmpeg | wc -w)
+    done
+done
+
+# Clean up
+rm -f .vid_ids.txt
+cd ..

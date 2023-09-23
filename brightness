@@ -1,0 +1,134 @@
+#!/bin/sh
+
+READ_ONLY=false
+
+if [ -z $BACKLIGHT_DIR ]; then
+    BACKLIGHT_DIR="/sys/class/backlight/$(ls -A /sys/class/backlight/ | awk '{print $1}')" 
+fi
+
+if [ "$1" = '-f' ] || [ "$1" = '--force' ]; then
+    echo $2 > $BACKLIGHT_DIR/brightness
+    exit
+fi
+
+if ! [ -e "$BACKLIGHT_DIR/max_brightness" ] || ! [ -e "$BACKLIGHT_DIR/brightness" ]; then
+    >&2 echo "Error: required files missing or no read permission in $BACKLIGHT_DIR/max_brightness, $BACKLIGHT_DIR/brightness"
+    exit 1
+fi
+
+if [ -z $MAX_BRIGHTNESS ]; then
+    MAX_BRIGHTNESS=$(cat $BACKLIGHT_DIR/max_brightness)
+fi
+
+CURRENT_BRIGHTNESS=$(cat $BACKLIGHT_DIR/brightness)
+
+if [ -n "$(echo "$*" | grep -E '\-q |--quick |-q$|--quick$')" ]; then
+    for i in $@; do
+        if [ $(echo $i | grep -E '^[-,+][0,1,2,3,4,5,6,7,8,9]{1,}') ]; then
+            VALUE=$(($CURRENT_BRIGHTNESS + $(echo $i | cut -c 2-)))
+            echo $VALUE > $BACKLIGHT_DIR/brightness
+            exit
+        elif [ $(echo $i | grep -E '^[0,1,2,3,4,5,6,7,8,9]{1,}') ]; then
+            echo $i > $BACKLIGHT_DIR/brightness
+            exit
+        elif [ "$i" = '++' ]; then
+            echo $((CURRENT_BRIGHTNESS + 1)) > $BACKLIGHT_DIR/brightness
+            exit
+        elif [ "$i" = '--' ]; then
+            echo $((CURRENT_BRIGHTNESS - 1)) > $BACKLIGHT_DIR/brightness
+            exit
+        fi
+    done
+    echo $CURRENT_BRIGHTNESS
+    exit
+fi
+
+if [ $# -eq 0 ]; then
+    echo $CURRENT_BRIGHTNESS
+    exit
+
+elif [ $(echo $@ | grep -E '\-h |-h$|--help |--help$') ]; then
+
+    echo "Usage: brightness [OPTIONS...] [VALUE]
+Print or set the brightness of the display.
+
+OPTIONS:
+    -m, --max                       Print a max value for the brightness and exit
+    -h, --help                      Print this help message and exit
+    -v, --version                   Print version info and exit
+    -c, --current                   Print the current brightness and exit
+    -d, --dry-run                   Perform all checks, but don't change anything
+    -q, --quick                     Supress most checks
+    -f, --force                     Supress any checks (this must be the 1st arg, while the 2nd arg must be an absolute value to change the brightness to)
+
+POSSIBLE VALUES:
+    <NO VALUE>, current             Print the current brightness and exit
+    0-[MAX_BRIGHTNESS]              Set the brightness to an absolute value
+    max                             Set the brightness to max level
+    min                             Set the brightness to 0
+    +[VALUE]                        Increase the brightness by VALUE
+    -[VALUE]                        Decrease the brightness by VALUE
+    ++                              Increment the brightness
+    --                              Increment the brightness
+
+ENVIRONMENT VARIABLES:
+    MAX_BRIGHTNESS                  Supply an alternative maximum brightness
+    BACKLIGHT_DIR                   Supply an alternative directory for the backlight information"
+    exit
+
+elif [ $(echo $@ | grep -E '\-m |-m$|--max |--max$') ]; then
+    echo $MAX_BRIGHTNESS
+    exit
+    
+elif [ $(echo $@ | grep -E '\-v |-v$|--version |--version$') ]; then
+    echo 'Brightness v1.0
+By Jan Sołtan
+Sat 23/09/2023 15:22'
+    exit
+elif [ $(echo $@ | grep -E  '\-c |-c$|--current |--current$|current |current$|-d$|--dry-run$') ]; then
+    echo $CURRENT_BRIGHTNESS
+    exit
+fi
+
+for i in $@; do
+    if [ $(echo $i | grep -wE '\-d|--dry-run') ]; then
+        DRY_RUN=true
+
+    elif [ $(echo $i | grep -wi min) ]; then
+        VALUE=0
+
+    elif [ $(echo $i | grep -wi max) ]; then
+        VALUE=$MAX_BRIGHTNESS
+
+    elif [ "$i" = '--' ]; then
+        VALUE=$(($CURRENT_BRIGHTNESS - 1))
+
+    elif [ "$i" = '++' ]; then
+        VALUE=$(($CURRENT_BRIGHTNESS + 1))
+
+    elif [ $(echo $i | grep -wE '^[-,+][0,1,2,3,4,5,6,7,8,9]{1,}') ]; then
+        VALUE=$(($CURRENT_BRIGHTNESS + $i))
+
+    elif [ $(echo $i | grep -wE '[0,1,2,3,4,5,6,7,8,9]{1,}') ]; then
+        VALUE=$i
+
+    elif [ $(echo $i | grep '^-') ]; then
+        >&2 echo "Error: Invalid option: $i"
+        exit 1
+    else 
+        >&2 echo "Error: Invalid value: $i"
+        exit 1
+    fi
+done
+
+if [ $VALUE -gt $MAX_BRIGHTNESS ] || [ $VALUE -lt 0 ]; then
+    >&2 echo "Error: Invalid brightness value: $VALUE (valid range is 0 - $MAX_BRIGHTNESS)"
+    exit 1
+fi
+
+if ! [ -w "$BACKLIGHT_DIR/brightness" ]; then
+    >&2 echo "Error: no write permission in $BACKLIGHT_DIR/brightness"
+    exit 1
+fi
+
+if ! [ $DRY_RUN ]; then echo $VALUE > $BACKLIGHT_DIR/brightness; fi

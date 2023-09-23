@@ -1,0 +1,81 @@
+#!/bin/sh
+input=$1
+input2=$2
+needBg=none
+
+if [ $(echo $input | grep help) ]; then
+    echo 'Available options are:'
+    echo '      Space;'
+    echo '      Matrix;'
+    echo '      Lake;'
+    echo '      Forest Lake;'
+    echo '      Road;'
+    echo '      Valley;'
+    echo '      Planet;'
+    echo '      Cherry;'
+    echo '      Nightsky;'
+    echo '      Paris;'
+    echo '      Tokyo;'
+    echo '      Binbows;'
+    echo '      Tux shooter;'
+    echo '      Black;'
+    echo 'You may also set an additional black background, which helps when using semi-opaque images.'
+    echo "To do this, specify the '--additional-bg' flag after the image of your choice." 
+    exit
+fi
+
+dir=/home/user/wallpapers
+
+if [ $(echo $input | grep -i cherry) ]; then
+    echo 'Setting wallpaper to Cherry Tree and Volcano...'
+    file="$dir/wp6826192-hd-4k-desktop-wallpapers.jpg"
+elif [ $( echo $input | grep -i matrix) ]; then
+    echo 'Setting wallpaper to China Matrix...'
+    needBg="black"
+    file="$dir/wp2822458.png"
+elif [ $(echo $input | grep -i road) ]; then
+    echo 'Setting wallpaper to Dark Road...'
+    file="$dir/wp5208001-on-road-desktop-4k-wallpapers.jpg"
+elif [ $(echo $input | grep -i planet) ]; then
+    echo 'Setting wallpaper to Snowy Hostile Planet...'
+    file="$dir/wp6563915-windbound-wallpapers.jpg"
+elif [ $(echo $input | grep -i forest) ]; then
+    echo 'Setting wallpaper to Lake with Forest...'
+    file="$dir/wp3946493-hd-wallpaper.jpg"
+elif [ $(echo $input | grep -i lake) ]; then
+    echo 'Setting wallpaper to Lake...'
+    file="$dir/wp3461372.jpg"
+elif [ $(echo $input | grep -i space) ]; then
+    echo 'Setting wallpaper to Blue Space...'
+    file="$dir/space_wallpaper1.jpg"
+elif [ $(echo $input | grep -i valley) ]; then
+    echo 'Setting wallpaper to Valley...'
+    file="$dir/wp6384379-4k-for-computer-wallpapers.jpg"
+elif [ $(echo $input | grep -i night) ]; then
+    echo 'Setting wallpaper to Night Sky...'
+    file="$dir/night-20.jpg"
+elif [ $(echo $input | grep -i paris) ]; then
+    echo 'Setting wallpaper to Paris...'
+    file="$dir/wp6826601-hd-4k-desktop-wallpapers.jpg"
+elif [ $(echo $input | grep -i tokyo) ]; then
+    echo 'Setting wallpaper to Tokyo Night...'
+    file="$dir/tokyo-night.jpg"
+elif [ $(echo $input | grep -i binbows) ]; then
+    echo 'Setting wallpaper to Michaelsoft Binbows...'
+    file="$dir/binbows.jpg"
+elif [ $(echo $input | grep -i tux) ]; then
+    echo 'Setting wallpaper to Tux Shooter...'
+    file="$dir/agent-linuz.jpg"
+elif [ $(echo $input | grep -i black) ]; then
+    echo 'Setting wallpaper to Black...'
+    file="$dir/black.png"
+else
+    echo "Invalid Input. Use the '--help' flag for available options."
+    exit
+fi
+
+if [ $(echo $input2 | grep -i 'additional-bg') ]; then
+    feh --bg-scale "$dir/$needBg.png"
+fi
+feh --bg-scale $file
+echo $file > ~/.current_wallpaper

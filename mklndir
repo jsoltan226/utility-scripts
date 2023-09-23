@@ -1,0 +1,8 @@
+#!/bin/sh
+targetDir=$1
+linkDir=$2
+targetDir="$(pwd)/$targetDir"
+cd "$linkDir"
+for file in "$targetDir"/*; do
+    ln -rs "$file" "$(basename "$file")"
+done;
