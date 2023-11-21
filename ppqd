@@ -12,28 +12,24 @@ EXTRACT_AUDIO_COUNTER=1
 RUNNNING_FFMPEG_THREADS=1
 THREADS=2
 
-checkExitCode()
+error()
 {
-    if [ $EXIT_CODE != 0 ]; then
-        exit 1
-    fi
+    echo $@ 1>&2
 }
 
 echoOnVerbose()
 {
-    if [ "$VERBOSE" = 1 ]; then
-        echo "$@"
-    fi
+    [ "$VERBOSE" = 1 ] && echo "$@"
 }
 
 checkForExecutable()
 {
     local executable_location=$(which "$1" 2>/dev/null)
     echoOnVerbose -n ">>> Checking for '$1'... "
-    if ! [ -x "$executable_location" ]; then
+    if [ -z "$executable_location" ]; then
         echoOnVerbose "FAIL"
-        >&2 echo "Error: '$1' not found in PATH." 
-        EXIT_CODE=1
+        error "Error: '$1' not found in PATH." 
+        exit 2
         return
     fi
     echoOnVerbose "OK"
@@ -61,16 +57,14 @@ checkForExecutable awk
 checkForExecutable yt-dlp
 checkForExecutable ffmpeg
 checkForExecutable urlencode
-
-checkExitCode
 echoOnVerbose
 
 # Check internet connection
 echoOnVerbose -n ">>> Checking for proper internet connection... "
 
-if ! [ "$(ping -c1 -w3 youtube.com 2>&1 | grep '1 received')" ]; then
+[ "$(ping -c1 -w3 youtube.com 2>&1 | grep '1 received')" ] || 
     echoOnVerbose "FAIL"
-    >&2 echo "Error: No internet connection."
+    error "Error: No internet connection."
     EXIT_CODE=1
 fi
 echoOnVerbose "OK"
@@ -79,15 +73,15 @@ echoOnVerbose "OK"
 echoOnVerbose -n "\n>>> Checking target directory... "
 if [ "$(stat "$TARGET_DIR" 2>&1 1>/dev/null)" ]; then
     echoOnVerbose "FAIL"
-    >&2 echo "Error: Could not stat '$TARGET_DIR'"
+    error "Error: Could not stat '$TARGET_DIR'"
     EXIT_CODE=1
 elif [ "$(touch "$TARGET_DIR/.perm-test" 2>&1)" ]; then
     echoOnVerbose "FAIL"
-    >&2 echo "Error: No write permission in '$TARGET_DIR'."
+    error "Error: No write permission in '$TARGET_DIR'."
     EXIT_CODE=1
 elif [ "$(stat "$TARGET_DIR" | grep file)" ]; then
     echoOnVerbose "FAIL"
-    >&2 echo "Error: '$TARGET_DIR' is a file."
+    error "Error: '$TARGET_DIR' is a file."
     EXIT_CODE=1
 else
     rm -f "$TARGET_DIR/.perm-test"
@@ -98,20 +92,13 @@ fi
 checkExitCode
 
 # Check if given playlist exists
-if ! [ $(echo "$PLAYLIST_URL" | grep -E '^https://(|(www|m)\.)youtube\.(com|..)/playlist\?list=') ]; then
-    >&2 echo "Error: The given URL is invalid."
-    EXIT_CODE=1
-elif ! [ "$(curl -D /dev/stdout "https://www.youtube.com/oembed?url=$(echo "$PLAYLIST_URL" | urlencode)&format=json" -o /dev/null --no-progress-meter | sed '1!d' | grep 200)" ]; then
-    >&2 echo "Error: The given playlist is unavailable."
-    EXIT_CODE=1
-fi
+[ $(echo "$PLAYLIST_URL" | grep -E '^https://(|(www|m)\.)youtube\.(com|..)/playlist\?list=') ] || 
+    error "Error: The given URL is invalid."; exit 3
+[ "$(curl -D /dev/stdout "https://www.youtube.com/oembed?url=$(echo "$PLAYLIST_URL" | urlencode)&format=json" -o /dev/null --no-progress-meter | sed '1!d' | grep 200)" ] ||
+    error "Error: The given playlist is unavailable."; exit 4
 
 # Check for any other running ffmpeg threads
-if [ "$(pidof ffmpeg)" ]; then
-    >&2 echo "Error: Other ffmpeg threads detected."
-    EXIT_CODE=1
-fi
-checkExitCode
+[ "$(pidof ffmpeg)" ] && error "Error: Other ffmpeg threads detected."; exit 3
 
 # Fetch video URLs
 echoOnVerbose -n ">>> Fetching video URLs... "
